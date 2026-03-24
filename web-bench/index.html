@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ALF-n-t WASM Browser Benchmark</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; padding: 2rem; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #58a6ff; }
+  .sub { color: #8b949e; margin-bottom: 1.5rem; font-size: 0.9rem; }
+  #status { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-weight: 500; }
+  .ok { background: #0d1f0d; border: 1px solid #238636; color: #3fb950; }
+  .fail { background: #1f0d0d; border: 1px solid #da3633; color: #f85149; }
+  .running { background: #1a1a00; border: 1px solid #9e6a03; color: #d29922; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { padding: 0.6rem 1rem; text-align: right; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td:first-child, th:first-child { text-align: left; }
+  tr.active { background: #161b22; }
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.9rem; }
+  button { background: #238636; color: #fff; border: none; padding: 0.6rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; margin-bottom: 1rem; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  .note { color: #8b949e; font-size: 0.8rem; margin-top: 1rem; }
+</style>
+</head>
+<body>
+  <h1>ALF-n-t WASM Browser Benchmark</h1>
+  <p class="sub">Format-preserving encryption &mdash; software AES in WebAssembly</p>
+
+  <button id="runBtn" disabled>Loading WASM&hellip;</button>
+  <div id="status"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variant</th>
+        <th>n</th>
+        <th>t</th>
+        <th>Rounds</th>
+        <th>Iterations</th>
+        <th>Encrypt (ns/op)</th>
+        <th>Decrypt (ns/op)</th>
+        <th>Enc M ops/s</th>
+        <th>Dec M ops/s</th>
+      </tr>
+    </thead>
+    <tbody id="results"></tbody>
+  </table>
+
+  <p class="note" id="footer"></p>
+
+<script type="module">
+import init, {
+  verify, init_variant, encrypt_n, decrypt_n,
+  prepare_decrypt, reinit_encrypt, variant_info
+} from './pkg/alf_web_bench.js';
+
+const VARIANTS = [
+  { id: 0, iters: 1_000_000 },
+  { id: 1, iters: 500_000 },
+  { id: 2, iters: 500_000 },
+  { id: 3, iters: 500_000 },
+  { id: 4, iters: 500_000 },
+];
+
+const statusEl = document.getElementById('status');
+const runBtn   = document.getElementById('runBtn');
+const tbody    = document.getElementById('results');
+const footer   = document.getElementById('footer');
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = cls;
+}
+
+async function load() {
+  try {
+    await init();
+    runBtn.textContent = 'Run Benchmarks';
+    runBtn.disabled = false;
+    setStatus('WASM loaded. Ready.', 'ok');
+  } catch (e) {
+    setStatus('Failed to load WASM: ' + e.message, 'fail');
+  }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function runBenchmarks() {
+  runBtn.disabled = true;
+  tbody.innerHTML = '';
+
+  // Correctness
+  setStatus('Running correctness tests...', 'running');
+  await sleep(50);
+  const ok = verify();
+  if (!ok) {
+    setStatus('Correctness tests FAILED', 'fail');
+    runBtn.disabled = false;
+    return;
+  }
+  setStatus('Correctness OK. Running benchmarks...', 'running');
+  await sleep(50);
+
+  for (const v of VARIANTS) {
+    const info = variant_info(v.id).split(',');
+    const [name, n, t, rounds] = info;
+
+    // Add row
+    const row = document.createElement('tr');
+    row.className = 'active';
+    row.innerHTML = `
+      <td class="mono">${name}</td>
+      <td>${n}</td><td>${t}</td><td>${rounds}</td>
+      <td>${v.iters.toLocaleString()}</td>
+      <td class="mono" id="enc-${v.id}">&hellip;</td>
+      <td class="mono" id="dec-${v.id}">&hellip;</td>
+      <td class="mono" id="enc-mops-${v.id}"></td>
+      <td class="mono" id="dec-mops-${v.id}"></td>`;
+    tbody.appendChild(row);
+    await sleep(10);
+
+    // Encrypt benchmark
+    init_variant(v.id);
+    encrypt_n(Math.min(v.iters, 1000)); // warmup
+
+    init_variant(v.id);
+    const t0 = performance.now();
+    encrypt_n(v.iters);
+    const encMs = performance.now() - t0;
+    const encNs = (encMs * 1e6) / v.iters;
+    const encMops = 1e9 / encNs / 1e6;
+
+    document.getElementById(`enc-${v.id}`).textContent = encNs.toFixed(1);
+    document.getElementById(`enc-mops-${v.id}`).textContent = encMops.toFixed(2);
+
+    // Decrypt benchmark
+    init_variant(v.id);
+    prepare_decrypt();
+    decrypt_n(Math.min(v.iters, 1000)); // warmup
+
+    reinit_encrypt();
+    prepare_decrypt();
+    const t1 = performance.now();
+    decrypt_n(v.iters);
+    const decMs = performance.now() - t1;
+    const decNs = (decMs * 1e6) / v.iters;
+    const decMops = 1e9 / decNs / 1e6;
+
+    document.getElementById(`dec-${v.id}`).textContent = decNs.toFixed(1);
+    document.getElementById(`dec-mops-${v.id}`).textContent = decMops.toFixed(2);
+
+    row.className = '';
+    await sleep(10);
+  }
+
+  setStatus('Done.', 'ok');
+  footer.textContent = `${navigator.userAgent} | ${new Date().toISOString()}`;
+  runBtn.disabled = false;
+}
+
+runBtn.addEventListener('click', runBenchmarks);
+load();
+</script>
+</body>
+</html>

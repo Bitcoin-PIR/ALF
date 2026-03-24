@@ -826,3 +826,35 @@ impl AlfNt {
         store_4x128(x, b0, b1, b2, b3);
     }
 }
+
+// ================================================================
+// wasm32: scalar fallback for batch operations
+// ================================================================
+
+#[cfg(target_arch = "wasm32")]
+impl AlfNt {
+    unsafe fn encrypt_11_x4(&self, b0: *mut u8, b1: *mut u8, b2: *mut u8, b3: *mut u8) {
+        self.encrypt(std::slice::from_raw_parts_mut(b0, 32));
+        self.encrypt(std::slice::from_raw_parts_mut(b1, 32));
+        self.encrypt(std::slice::from_raw_parts_mut(b2, 32));
+        self.encrypt(std::slice::from_raw_parts_mut(b3, 32));
+    }
+    unsafe fn encrypt_10_x4(&self, b0: *mut u8, b1: *mut u8, b2: *mut u8, b3: *mut u8) {
+        self.encrypt(std::slice::from_raw_parts_mut(b0, 32));
+        self.encrypt(std::slice::from_raw_parts_mut(b1, 32));
+        self.encrypt(std::slice::from_raw_parts_mut(b2, 32));
+        self.encrypt(std::slice::from_raw_parts_mut(b3, 32));
+    }
+    unsafe fn decrypt_11_x4(&self, b0: *mut u8, b1: *mut u8, b2: *mut u8, b3: *mut u8) {
+        self.decrypt(std::slice::from_raw_parts_mut(b0, 32));
+        self.decrypt(std::slice::from_raw_parts_mut(b1, 32));
+        self.decrypt(std::slice::from_raw_parts_mut(b2, 32));
+        self.decrypt(std::slice::from_raw_parts_mut(b3, 32));
+    }
+    unsafe fn decrypt_10_x4(&self, b0: *mut u8, b1: *mut u8, b2: *mut u8, b3: *mut u8) {
+        self.decrypt(std::slice::from_raw_parts_mut(b0, 32));
+        self.decrypt(std::slice::from_raw_parts_mut(b1, 32));
+        self.decrypt(std::slice::from_raw_parts_mut(b2, 32));
+        self.decrypt(std::slice::from_raw_parts_mut(b3, 32));
+    }
+}

@@ -1,0 +1,15 @@
+[package]
+name = "alf-web-bench"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+alf-nt = { path = ".." }
+
+[profile.release]
+lto = true
+opt-level = 3

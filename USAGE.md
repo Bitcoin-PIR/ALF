@@ -10,9 +10,8 @@ Based on the paper:
 
 ## Requirements
 
-- **Platform**: aarch64 (Apple Silicon / ARM64) with NEON + AES + PMULL crypto extensions
+- **Platform**: aarch64 (Apple Silicon / ARM64) with NEON + AES + PMULL crypto extensions, or x86_64 with AES-NI + SSE4.1 (+ optional AVX-512 VAES), or **wasm32** (software AES fallback)
 - **Rust edition**: 2021, stable toolchain
-- **x86_64**: code structure supports future AVX-2/AVX-512 VAES backend (not yet compiled/tested)
 
 ## Add as dependency
 
@@ -193,10 +192,22 @@ engine.decrypt_batch(&mut ptrs);
 
 Full-domain permutation of 2^27 (134M) elements: ~2.7s with batch API.
 
+### WASM performance (software AES)
+
+Benchmarked via wasmtime (WASI) and Chrome V8 (browser):
+
+| Config | Wasmtime (ns/op) | Chrome V8 (ns/op) | Native (ns/op) |
+|---|---|---|---|
+| ALF-2-0b (16-bit, r=20) | ~500 | ~1225 | ~60 |
+| ALF-2-7b (23-bit, r=28) | ~2458 | ~2343 | ~83 |
+| ALF-4-0b (32-bit, r=14) | ~369 | ~901 | — |
+| ALF-8-0b (64-bit, r=12) | ~316 | ~781 | — |
+
+Decrypt is ~2x slower than encrypt in software (InvMixColumns requires GF(2^8) multiply by 9/11/13/14 vs just xtime for forward).
+
 ## Building
 
 ```bash
-cd alf-rust
 cargo build --release
 
 # Run tests and benchmarks
@@ -205,17 +216,38 @@ cargo run --release
 
 ### Build configuration
 
-`.cargo/config.toml` enables the required ARM crypto extensions:
+`.cargo/config.toml` enables the required platform crypto extensions:
 ```toml
 [target.aarch64-apple-darwin]
-rustflags = ["-C", "target-feature=+aes,+sha3"]
+rustflags = ["-C", "target-feature=+aes,+neon,+sha2,+sha3"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-feature=+aes,+ssse3,+sse4.1,+pclmulqdq"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-feature=+aes,+ssse3,+sse4.1,+pclmulqdq"]
 ```
 
-For x86_64 targets (when implemented):
-```toml
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-feature=+aes,+ssse3,+pclmulqdq"]
+### WASM build (wasmtime / WASI)
+
+```bash
+rustup target add wasm32-wasip1
+cargo build --release --target wasm32-wasip1 --bin wasm-bench
+wasmtime target/wasm32-wasip1/release/wasm-bench.wasm
 ```
+
+### WASM build (browser)
+
+Requires [wasm-pack](https://rustwasm.github.io/wasm-pack/):
+
+```bash
+cd web-bench
+wasm-pack build --target web --release
+python3 -m http.server 8080
+# Open http://localhost:8080/index.html in browser
+```
+
+The browser benchmark uses `performance.now()` for high-resolution timing and runs correctness checks before benchmarking.
 
 ## Security notes
 
