@@ -1,0 +1,16 @@
+[package]
+name = "alf-nt"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[lib]
+name = "alf_nt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "alf-test"
+path = "src/main.rs"
